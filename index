@@ -1,0 +1,1253 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Monitoramento Nacional INMET v2</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+
+  <style>
+    :root{
+      --bg:#f4f7fb;
+      --panel:#ffffff;
+      --panel-2:#f8fbff;
+      --text:#0f1f31;
+      --muted:#5f6c7b;
+      --border:#e4eaf3;
+      --shadow:0 10px 30px rgba(10,20,40,.08);
+      --accent:#102033;
+
+      /* Cores oficiais dos status */
+      --operante:#2ca02c;
+      --atencao:#FFD966;
+      --isolado:#F4B183;
+      --pane:#FF0000;
+      --parou:#D9B3FF;
+      --retornou:#77DCF2;
+    }
+
+    [data-theme="dark"]{
+      --bg:#0b1220;
+      --panel:#111a2b;
+      --panel-2:#0d1626;
+      --text:#eaf1ff;
+      --muted:#9fb0c7;
+      --border:#233047;
+      --shadow:0 10px 30px rgba(0,0,0,.35);
+      --accent:#cfe2ff;
+    }
+
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;
+      font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+      background:var(--bg);
+      color:var(--text);
+    }
+
+    .app{
+      min-height:100vh;
+      display:grid;
+      grid-template-rows:auto auto 1fr;
+    }
+
+    .topbar{
+      padding:20px 24px 10px;
+      display:flex;
+      justify-content:space-between;
+      gap:14px;
+      flex-wrap:wrap;
+      align-items:flex-start;
+    }
+
+    .brand h1{
+      margin:0;
+      font-size:clamp(22px,2.2vw,32px);
+      font-weight:800;
+      letter-spacing:-.04em;
+    }
+
+    .brand .meta{
+      margin-top:8px;
+      color:var(--muted);
+      font-size:13px;
+      line-height:1.5;
+    }
+
+    .toolbar{
+      display:flex;
+      flex-wrap:wrap;
+      gap:10px;
+      align-items:center;
+      justify-content:flex-end;
+    }
+
+    .btn, select, input{
+      background:var(--panel);
+      color:var(--text);
+      border:1px solid var(--border);
+      border-radius:12px;
+      padding:11px 14px;
+      font:inherit;
+      outline:none;
+    }
+
+    .btn{
+      cursor:pointer;
+      font-weight:700;
+      box-shadow:0 1px 2px rgba(0,0,0,.03);
+    }
+
+    .btn.primary{
+      background:var(--accent);
+      color:var(--panel);
+      border-color:var(--accent);
+    }
+
+    .btn:hover{filter:brightness(.98)}
+    .btn:active{transform:translateY(1px)}
+
+    .container{
+      padding:0 24px 24px;
+      display:grid;
+      gap:16px;
+    }
+
+    .kpis{
+      display:grid;
+      grid-template-columns:repeat(7,minmax(130px,1fr));
+      gap:12px;
+    }
+
+    .kpi{
+      background:var(--panel);
+      border:1px solid var(--border);
+      border-radius:18px;
+      box-shadow:var(--shadow);
+      padding:16px;
+    }
+
+    .kpi .label{
+      font-size:12px;
+      text-transform:uppercase;
+      letter-spacing:.07em;
+      color:var(--muted);
+      font-weight:800;
+    }
+
+    .kpi .value{
+      font-size:28px;
+      font-weight:800;
+      margin-top:10px;
+      line-height:1;
+    }
+
+    .filters{
+      background:var(--panel);
+      border:1px solid var(--border);
+      border-radius:18px;
+      box-shadow:var(--shadow);
+      padding:14px;
+      display:grid;
+      grid-template-columns:repeat(5,minmax(0,1fr));
+      gap:10px;
+      align-items:end;
+    }
+
+    .field{
+      display:flex;
+      flex-direction:column;
+      gap:6px;
+    }
+
+    .field label{
+      font-size:12px;
+      color:var(--muted);
+      font-weight:700;
+    }
+
+    .main-grid{
+      display:grid;
+      grid-template-columns:1.08fr .92fr;
+      gap:16px;
+      align-items:start;
+    }
+
+    .panel{
+      background:var(--panel);
+      border:1px solid var(--border);
+      border-radius:18px;
+      box-shadow:var(--shadow);
+      overflow:hidden;
+    }
+
+    .panel-header{
+      padding:16px 18px;
+      border-bottom:1px solid var(--border);
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:12px;
+      flex-wrap:wrap;
+      background:var(--panel-2);
+    }
+
+    .panel-header h2{
+      margin:0;
+      font-size:18px;
+      font-weight:800;
+    }
+
+    .panel-body{padding:16px 18px}
+
+    #map{
+      height:760px;
+      border-radius:14px;
+      overflow:hidden;
+      background:#dde6f2;
+    }
+
+    .status-legend{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+      align-items:center;
+    }
+
+    .legend-item{
+      display:flex;
+      align-items:center;
+      gap:6px;
+      font-size:12px;
+      color:var(--muted);
+      font-weight:700;
+    }
+
+    .dot{
+      width:10px;
+      height:10px;
+      border-radius:50%;
+      display:inline-block;
+    }
+
+    .table-toolbar{
+      display:flex;
+      justify-content:space-between;
+      gap:10px;
+      flex-wrap:wrap;
+      margin-bottom:10px;
+      align-items:center;
+    }
+
+    .table-wrap{
+      overflow:auto;
+      max-height:680px;
+      border:1px solid var(--border);
+      border-radius:14px;
+      background:var(--panel);
+    }
+
+    table{
+      width:100%;
+      border-collapse:collapse;
+      min-width:1600px;
+      font-size:12px;
+    }
+
+    thead th{
+      position:sticky;
+      top:0;
+      z-index:2;
+      background:var(--panel-2);
+      border-bottom:1px solid var(--border);
+      padding:10px 8px;
+      text-align:left;
+      white-space:nowrap;
+    }
+
+    tbody td{
+      border-bottom:1px solid rgba(128,128,128,.12);
+      padding:8px;
+      white-space:nowrap;
+    }
+
+    tbody tr:hover{background:rgba(120,160,220,.08)}
+
+    .pill{
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      padding:5px 10px;
+      border-radius:999px;
+      font-weight:800;
+      font-size:12px;
+      font-size:12px;
+    }
+
+    /* Cores oficiais dos status na tabela */
+    .status-OPERANTE{background:#C6EFCE;color:#006100}
+    .status-ATENÇÃO{background:#FFF2CC;color:#7F6000}
+    .status-ISOLADO{background:#F4B183;color:#7F2704}
+    .status-PANE{background:#F4CCCC;color:#990000}
+    .status-PAROU{background:#D9B3FF;color:#4B0082}
+    .status-RETORNOU{background:#77DCF2;color:#003344}
+
+    .pagination{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:10px;
+      flex-wrap:wrap;
+      padding-top:12px;
+    }
+
+    .pagination .nav{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+    }
+
+    .charts-grid{
+      display:grid;
+      grid-template-columns:repeat(2,minmax(0,1fr));
+      gap:14px;
+    }
+
+    .chart-card{
+      background:var(--panel);
+      border:1px solid var(--border);
+      border-radius:18px;
+      box-shadow:var(--shadow);
+      padding:14px;
+    }
+
+    .chart-card canvas{
+      width:100% !important;
+      height:280px !important;
+    }
+
+    .muted{color:var(--muted)}
+    .small{font-size:12px}
+
+    .footer{
+      padding:0 24px 24px;
+      color:var(--muted);
+      font-size:13px;
+    }
+
+    .loading{
+      display:none;
+      font-size:13px;
+      color:var(--muted);
+      align-items:center;
+      gap:10px;
+    }
+
+    .bar{
+      width:180px;
+      height:8px;
+      border-radius:999px;
+      background:rgba(120,120,120,.16);
+      overflow:hidden;
+    }
+
+    .bar > div{
+      width:0%;
+      height:100%;
+      background:var(--accent);
+      transition:width .2s ease;
+    }
+
+    @media (max-width: 1400px){
+      .kpis{grid-template-columns:repeat(4,minmax(130px,1fr))}
+      .filters{grid-template-columns:repeat(2,minmax(0,1fr))}
+      .main-grid{grid-template-columns:1fr}
+      #map{height:520px}
+    }
+
+    @media (max-width: 768px){
+      .container,.topbar,.footer{padding-left:12px;padding-right:12px}
+      .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+      .charts-grid{grid-template-columns:1fr}
+      .toolbar,.filters,.table-toolbar{grid-template-columns:1fr}
+      select,input,.btn{width:100%}
+    }
+  </style>
+</head>
+<body>
+  <div class="app" id="app">
+    <header class="topbar">
+      <div class="brand">
+        <h1>🌎 Monitoramento Nacional Operacional INMET v2</h1>
+        <div class="meta" id="metaLine">Última atualização: -- · Próxima atualização: -- · Cache: --</div>
+      </div>
+
+      <div class="toolbar">
+        <button class="btn" id="themeBtn">🌗 Tema</button>
+        <button class="btn primary" id="refreshBtn">🔄 Atualizar</button>
+        <button class="btn" id="csvBtn">⬇️ CSV</button>
+        <button class="btn" id="excelBtn">⬇️ Excel</button>
+        <button class="btn" id="geojsonBtn">⬇️ GeoJSON</button>
+        <button class="btn" id="kmlBtn">⬇️ KML</button>
+      </div>
+    </header>
+
+    <main class="container">
+      <section class="kpis" id="kpis"></section>
+
+      <section class="filters">
+        <div class="field">
+          <label for="searchInput">Busca textual</label>
+          <input id="searchInput" type="text" placeholder="Código, nome ou UF" />
+        </div>
+        <div class="field">
+          <label for="ufFilter">UF</label>
+          <select id="ufFilter"></select>
+        </div>
+        <div class="field">
+          <label for="regionFilter">Região</label>
+          <select id="regionFilter"></select>
+        </div>
+        <div class="field">
+          <label for="statusFilter">Status</label>
+          <select id="statusFilter"></select>
+        </div>
+        <div class="field">
+          <label for="pageSize">Linhas por página</label>
+          <select id="pageSize">
+            <option value="10">10</option>
+            <option value="25" selected>25</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+          </select>
+        </div>
+      </section>
+
+      <section class="main-grid">
+        <div class="panel">
+          <div class="panel-header">
+            <h2>🗺️ Mapa Operacional</h2>
+            <div class="status-legend" id="legend"></div>
+          </div>
+          <div class="panel-body">
+            <div id="map"></div>
+            <div class="loading" id="loadMap">
+              <div class="bar"><div id="mapBar"></div></div>
+              <span id="loadText">Carregando...</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <h2>📋 Monitoramento Geral</h2>
+            <div class="muted small" id="tableStats"></div>
+          </div>
+          <div class="panel-body">
+            <div class="table-toolbar">
+              <div class="muted small" id="groupInfo"></div>
+              <div class="muted small" id="errorInfo"></div>
+            </div>
+
+            <div class="table-wrap">
+              <table id="table"></table>
+            </div>
+
+            <div class="pagination">
+              <div class="muted small" id="pageInfo"></div>
+              <div class="nav">
+                <button class="btn" id="firstPageBtn">⏮</button>
+                <button class="btn" id="prevPageBtn">◀</button>
+                <button class="btn" id="nextPageBtn">▶</button>
+                <button class="btn" id="lastPageBtn">⏭</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>📈 Painel Temporal - Últimos 10 Dias</h2>
+          <div class="field" style="min-width:220px;">
+            <label for="stationSelect">Selecionar estação</label>
+            <select id="stationSelect"></select>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="charts-grid" id="chartsGrid"></div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      Sistema Nacional Operacional de Monitoramento Meteorológico INMET
+    </footer>
+  </div>
+
+  <script>
+    const API_TEMPO = "https://apitempo.inmet.gov.br";
+    const API_VITRAL = "https://apivitral.inmet.gov.br";
+    const ESTACOES_EXCLUIDAS = new Set(["A004","A006","A007","A008","A059","A060","A127","A208","A243","A302","A338","A362","A378","A379","A403","A411","A418","A420","A435","A449","A454","A459","A460","A461","A462","A463","A464","A465","A466","A467","A468","A469","A470","A471","A501","A503","A504","A573","A574","A575","A576","A577","A578","A579","A580","A581","A582","A605","A615","A623","A635","A650","A651","A653","A654","A655","A656","A729","A745","A757","A767","A773","A774","A775","A776","A777","A778","A779","A780","A781","A791","A792","A793","A794","A795","A796","A797","A799","A808","A847","A913","A915","A918","A921","A998","A999","B701","B702","B703","B704","B705","B706","B707","B807","B879","B882","B884"]);
+    const REGIOES = { AC:"NORTE",AP:"NORTE",AM:"NORTE",PA:"NORTE",RO:"NORTE",RR:"NORTE",TO:"NORTE", AL:"NORDESTE",BA:"NORDESTE",CE:"NORDESTE",MA:"NORDESTE",PB:"NORDESTE",PE:"NORDESTE",PI:"NORDESTE",RN:"NORDESTE",SE:"NORDESTE", DF:"CENTRO-OESTE",GO:"CENTRO-OESTE",MT:"CENTRO-OESTE",MS:"CENTRO-OESTE", ES:"SUDESTE",MG:"SUDESTE",RJ:"SUDESTE",SP:"SUDESTE", PR:"SUL",RS:"SUL",SC:"SUL" };
+    const SENSORES = { tem_ins:"Temperatura instantanea",tem_max:"Temperatura maxima",tem_min:"Temperatura minima",umd_ins:"Umidade instantanea",umd_max:"Umidade maxima",umd_min:"Umidade minima",pto_ins:"Ponto orvalho instantaneo",pto_max:"Ponto orvalho maximo",pto_min:"Ponto orvalho minimo",pre_ins:"Pressao instantanea",pre_max:"Pressao maxima",pre_min:"Pressao minima",ven_vel:"Vento velocidade",ven_dir:"Vento direcao",ven_raj:"Vento rajada",rad_glo:"Radiacao global",chuva:"Chuva",ten_bat:"Tensao bateria" };
+    const STATUS_LIST = ["TODOS","OPERANTE","ATENÇÃO","ISOLADO","PANE","PAROU","RETORNOU"];
+
+    // Mapa exato de status → cor oficial (usado EM TODO SISTEMA: mapa, legenda, tabela)
+    const STATUS_COLOR_MAP = {
+      OPERANTE:"#2ca02c",
+      ATENÇÃO:"#FFD966",
+      ISOLADO:"#F4B183",
+      PANE:"#FF0000",
+      PAROU:"#D9B3FF",
+      RETORNOU:"#77DCF2"
+    };
+
+    const App = {
+      theme: localStorage.getItem("inmet_theme") || "light",
+      data: [],
+      filtered: [],
+      page: 1,
+      pageSize: 25,
+      charts: {},
+      map: null,
+      markers: [],
+      cacheKey: "inmet_v2_cache",
+      cacheMetaKey: "inmet_v2_cache_meta"
+    };
+
+    const el = {
+      app: document.getElementById("app"),
+      metaLine: document.getElementById("metaLine"),
+      kpis: document.getElementById("kpis"),
+      legend: document.getElementById("legend"),
+      table: document.getElementById("table"),
+      tableStats: document.getElementById("tableStats"),
+      groupInfo: document.getElementById("groupInfo"),
+      errorInfo: document.getElementById("errorInfo"),
+      pageInfo: document.getElementById("pageInfo"),
+      searchInput: document.getElementById("searchInput"),
+      ufFilter: document.getElementById("ufFilter"),
+      regionFilter: document.getElementById("regionFilter"),
+      statusFilter: document.getElementById("statusFilter"),
+      pageSize: document.getElementById("pageSize"),
+      stationSelect: document.getElementById("stationSelect"),
+      chartsGrid: document.getElementById("chartsGrid"),
+      loadMap: document.getElementById("loadMap"),
+      mapBar: document.getElementById("mapBar"),
+      loadText: document.getElementById("loadText")
+    };
+
+    function safeText(v){ return String(v ?? "").trim(); }
+    function stripStatus(v){ return safeText(v).replace(/^[🟢🟡🟠🔴🟣🔵]\s*/, ""); }
+    function statusClass(status){ return `pill status-${stripStatus(status)}`; }
+
+    function normalize(s){
+      return String(s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    }
+
+    function setTheme(theme){
+      App.theme = theme;
+      document.documentElement.setAttribute("data-theme", theme === "dark" ? "dark" : "light");
+      localStorage.setItem("inmet_theme", theme);
+    }
+
+    function toggleTheme(){
+      setTheme(App.theme === "dark" ? "light" : "dark");
+    }
+
+    function nextUpdateUTC(){
+      const now = new Date();
+      const next = new Date(now);
+      next.setUTCMinutes(5,0,0);
+      if (now.getUTCMinutes() >= 5) next.setUTCHours(next.getUTCHours() + 1);
+      return next;
+    }
+
+    function updateMeta(cacheLabel="--"){
+      const next = nextUpdateUTC();
+      el.metaLine.textContent = `Última atualização: ${App.lastUpdate || "--"} · Próxima atualização: ${next.toLocaleString("pt-BR",{timeZone:"UTC"})} UTC · Cache: ${cacheLabel}`;
+    }
+
+    async function fetchJson(url, signal){
+      const res = await fetch(url, { signal, cache: "no-store" });
+      if (!res.ok) throw new Error(`Falha HTTP ${res.status}`);
+      return res.json();
+    }
+
+    async function getEstacoes(signal){
+      const [a,b] = await Promise.all([        fetchJson(`${API_TEMPO}/estacoes/T`, signal),
+        fetchJson(`${API_TEMPO}/estacoes/M`, signal)
+      ]);
+
+      return [...a,...b].map(r => {
+        const o = {};
+        for (const [k,v] of Object.entries(r)) o[k.toLowerCase()] = v;
+        o.cd_estacao = String(o.cd_estacao || "").toUpperCase();
+        return o;
+      })
+      .filter(r => r.cd_estacao && !ESTACOES_EXCLUIDAS.has(r.cd_estacao) && !/^[CFIS]/.test(r.cd_estacao));
+    }
+
+    async function getVitral(codigo, signal){
+      try{
+        return await fetchJson(`${API_VITRAL}/dados/mobile/${codigo}`, signal);
+      }catch{
+        return null;
+      }
+    }
+
+    function horaFromHR(hr){
+      return String(hr ?? "").padStart(4,"0").slice(0,2);
+    }
+
+    function horasDesdeTransmissao(data, hora){
+      try{
+        const dt = new Date(`${data}T${horaFromHR(hora)}:00:00Z`);
+        return (Date.now() - dt.getTime()) / 3600000;
+      }catch{
+        return null;
+      }
+    }
+
+    function analisarSensor(registros, sensor){
+      if (!registros?.length) return "PANE";
+      let validos = [];
+      let isolado = false;
+
+      for (const r of registros){
+        const valor = r?.[sensor.toUpperCase()];
+        const data = r?.DT_MEDICAO;
+        const hora = r?.HR_MEDICAO;
+        if (!data || !hora) continue;
+        const horas = horasDesdeTransmissao(data, hora);
+        if (horas == null) continue;
+        if (valor && String(valor).includes("*")) isolado = true;
+        if (valor !== null && valor !== undefined && valor !== "" && valor !== "-") validos.push(horas);
+      }
+
+      if (!validos.length) return "PANE";
+      if (isolado) return "ISOLADO";
+      if (Math.min(...validos) >= 2) return "ATENÇÃO";
+      return "OPERANTE";
+    }
+
+    function statusOperacional(lista){
+      if (lista.every(s => s === "PANE")) return "PANE";
+      if (lista.includes("PAROU")) return "PAROU";
+      if (lista.includes("RETORNOU")) return "RETORNOU";
+      if (lista.includes("ISOLADO")) return "ISOLADO";
+      if (lista.includes("ATENÇÃO")) return "ATENÇÃO";
+      return "OPERANTE";
+    }
+
+    function exportStatus(plain){ return plain || ""; }
+
+    async function processarEstacao(row, signal){
+      const codigo = String(row.cd_estacao);
+      const vitral = await getVitral(codigo, signal);
+      if (!vitral) return null;
+
+      const registros10 = vitral["10 dias"] || [];
+      const registros5 = vitral["5 dias"] || vitral["10 dias"] || [];
+
+      let ultima = null, dias = null;
+      if (registros10.length){
+        const r = registros10;
+        if (r?.DT_MEDICAO && r?.HR_MEDICAO){
+          const hh = horaFromHR(r.HR_MEDICAO);
+          ultima = `${r.DT_MEDICAO} ${hh}00`;
+          try{
+            dias = Math.round(((Date.now() - new Date(`${r.DT_MEDICAO}T${hh}:00:00Z`).getTime()) / 86400000) * 10) / 10;
+          }catch{}
+        }
+      }
+
+      const linha = {
+        "CÓDIGO": codigo,
+        "NOME ESTAÇÃO": row.dc_nome || "",
+        "UF": row.sg_estado || "",
+        "REGIÃO": REGIOES[String(row.sg_estado || "").toUpperCase()] || "NÃO DEFINIDA",
+        "LATITUDE": row.vl_latitude,
+        "LONGITUDE": row.vl_longitude,
+        "SITUAÇÃO ESTAÇÃO": String(row.cd_situacao || "DESCONHECIDA").toUpperCase(),
+        "ÚLTIMA TRANSMISSÃO": ultima,
+        "DIAS SEM TRANSMISSÃO": dias
+      };
+
+      const stList = [];
+      for (const [k,nome] of Object.entries(SENSORES)){
+        const st = analisarSensor(registros10, k);
+        linha[nome] = st;
+        stList.push(st);
+      }
+
+      linha["STATUS OPERACIONAL"] = statusOperacional(stList);
+
+      const situacao = safeText(linha["SITUAÇÃO ESTAÇÃO"]).toUpperCase().trim();
+      if (situacao.includes("OPERANTE") && dias != null && dias >= 3){
+        linha["STATUS OPERACIONAL"] = "PAROU";
+      } else if (situacao.includes("PANE") && dias != null && dias <= 2){
+        let dadosValidos = 0;
+        for (const r of registros10){
+          let possui = false;
+          for (const sensor of Object.keys(SENSORES)){
+            const valor = r?.[sensor.toUpperCase()];
+            if (valor !== null && valor !== undefined && valor !== "" && valor !== "-"){
+              possui = true;
+              break;
+            }
+          }
+          if (possui) dadosValidos++;
+        }
+        if (dadosValidos >= 48) linha["STATUS OPERACIONAL"] = "RETORNOU";
+      }
+
+      linha.__raw10 = registros10;
+      linha.__raw5 = registros5;
+      return linha;
+    }
+
+    function addEmojiFields(row){
+      const out = { ...row };
+      const plain = stripStatus(out["STATUS OPERACIONAL"]);
+      out["STATUS OPERACIONAL"] = `${symbolFromStatus(plain)} ${plain}`.trim();
+      out["SITUAÇÃO ESTAÇÃO"] = exportStatus(out["SITUAÇÃO ESTAÇÃO"]);
+      for (const s of Object.values(SENSORES)){
+        out[s] = exportStatus(out[s]);
+      }
+      return out;
+    }
+
+    function symbolFromStatus(s){
+      return { OPERANTE:"🟢", ATENÇÃO:"🟡", ISOLADO:"🟠", PANE:"🔴", PAROU:"🟣", RETORNOU:"🔵" }[s] || "";
+    }
+
+    // CORREÇÃO PRINCIPAL: função que retorna a cor EXATA do status
+    function getColorForStatus(status){
+      const plain = stripStatus(status);
+      return STATUS_COLOR_MAP[plain] || "#666";
+    }
+
+    function createLegend(){
+      el.legend.innerHTML = Object.entries(STATUS_COLOR_MAP)
+        .map(([k,c]) => `<span class="legend-item"><span class="dot" style="background:${c}"></span>${k}</span>`).join("");
+    }
+
+    function renderKPIs(data){
+      const total = data.length;
+      const count = s => data.filter(r => stripStatus(r["STATUS OPERACIONAL"]) === s).length;
+      const items = [        ["TOTAL", total],
+        ["OPERANTE", count("OPERANTE")],
+        ["ATENÇÃO", count("ATENÇÃO")],
+        ["ISOLADO", count("ISOLADO")],
+        ["PANE", count("PANE")],
+        ["PAROU", count("PAROU")],
+        ["RETORNOU", count("RETORNOU")]
+      ];
+      el.kpis.innerHTML = items.map(([l,v]) => `<div class="kpi"><div class="label">${l}</div><div class="value">${v}</div></div>`).join("");
+    }
+
+    function buildFilters(data){
+      const ufs = [...new Set(data.map(r => r.UF).filter(Boolean))].sort();
+      const regions = [...new Set(data.map(r => r["REGIÃO"]).filter(Boolean))].sort();
+      const statuses = [...new Set(data.map(r => stripStatus(r["STATUS OPERACIONAL"])).filter(Boolean))].sort();
+
+      el.ufFilter.innerHTML = `<option value="">Todas as UFs</option>${ufs.map(x => `<option>${x}</option>`).join("")}`;
+      el.regionFilter.innerHTML = `<option value="">Todas as regiões</option>${regions.map(x => `<option>${x}</option>`).join("")}`;
+      el.statusFilter.innerHTML = `<option value="">Todos os status</option>${STATUS_LIST.filter(x => x !== "TODOS").map(x => `<option>${x}</option>`).join("")}`;
+
+      el.stationSelect.innerHTML = data.map(r => `<option value="${r["CÓDIGO"]}">${r["CÓDIGO"]} - ${r["NOME ESTAÇÃO"] || ""}</option>`).join("");
+    }
+
+    function applyFilters(){
+      const q = normalize(el.searchInput.value);
+      const uf = el.ufFilter.value;
+      const rg = el.regionFilter.value;
+      const st = el.statusFilter.value;
+
+      App.filtered = App.data.filter(r => {
+        const text = normalize(`${r["CÓDIGO"]} ${r["NOME ESTAÇÃO"]} ${r["UF"]} ${r["REGIÃO"]}`);
+        return (!q || text.includes(q))
+          && (!uf || r["UF"] === uf)
+          && (!rg || r["REGIÃO"] === rg)
+          && (!st || stripStatus(r["STATUS OPERACIONAL"]) === st);
+      });
+
+      App.page = 1;
+      renderAll();
+    }
+
+    function paginate(data){
+      const size = Number(el.pageSize.value || 25);
+      App.pageSize = size;
+      const totalPages = Math.max(1, Math.ceil(data.length / size));
+      App.page = Math.min(App.page, totalPages);
+      const start = (App.page - 1) * size;
+      return { rows: data.slice(start, start + size), totalPages };
+    }
+
+    function renderTable(data){
+      const cols = Object.keys(data || {}).filter(c => !c.startsWith("__") && !["LATITUDE","LONGITUDE"].includes(c));
+      const { rows, totalPages } = paginate(data);
+
+      el.pageInfo.textContent = `Página ${App.page} de ${totalPages}`;
+      el.tableStats.textContent = `${data.length} registros filtrados`;
+      const regionGroups = [...new Set(data.map(r => r["REGIÃO"]))].filter(Boolean).length;
+      el.groupInfo.textContent = `Agrupamento por região: ${regionGroups} grupos`;
+
+      el.table.innerHTML = `
+        <thead><tr>${cols.map(c => `<th>${c}</th>`).join("")}</tr></thead>
+        <tbody>
+          ${rows.map(r => `<tr>${cols.map(c => {
+            const v = r[c] ?? "";
+            if (c === "STATUS OPERACIONAL" || c === "SITUAÇÃO ESTAÇÃO" || Object.values(SENSORES).includes(c)){
+              return `<td><span class="${statusClass(v)}">${safeText(v)}</span></td>`;
+            }
+            return `<td>${safeText(v)}</td>`;
+          }).join("")}</tr>`).join("")}
+        </tbody>
+      `;
+    }
+
+    function updateMap(data){
+      if (!App.map){
+        App.map = L.map("map").setView([-14.5, -52], 4);
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 18, attribution: "&copy; OpenStreetMap" }).addTo(App.map);
+      }
+
+      App.markers.forEach(m => m.remove());
+      App.markers = [];
+
+      const coords = data.map(r => ({
+        ...r,
+        LATITUDE: Number(String(r.LATITUDE ?? "").replace(",", ".").trim()),
+        LONGITUDE: Number(String(r.LONGITUDE ?? "").replace(",", ".").trim())
+      })).filter(r => Number.isFinite(r.LATITUDE) && Number.isFinite(r.LONGITUDE) && r.LATITUDE >= -35 && r.LATITUDE <= 10 && r.LONGITUDE >= -80 && r.LONGITUDE <= -20);
+
+      coords.forEach(r => {
+        /* CORREÇÃO CRÍTICA: usar getColorForStatus para garantir cor exata do status */
+        const color = getColorForStatus(r["STATUS OPERACIONAL"]);
+        const m = L.circleMarker([r.LATITUDE, r.LONGITUDE], {
+          radius: 7,
+          color: color,
+          fillColor: color,
+          fillOpacity: 0.85,
+          weight: 1
+        }).addTo(App.map);
+
+        const plainStatus = stripStatus(r["STATUS OPERACIONAL"]);
+        m.bindPopup(`
+          <strong>${r["CÓDIGO"]}</strong><br>
+          ${r["NOME ESTAÇÃO"] || ""}<br>
+          UF: ${r["UF"] || ""}<br>
+          Região: ${r["REGIÃO"] || ""}<br>
+          Última Transmissão: ${r["ÚLTIMA TRANSMISSÃO"] || "-"}<br>
+          Dias sem Transmissão: ${r["DIAS SEM TRANSMISSÃO"] ?? "-"}<br>
+          Status: ${symbolFromStatus(plainStatus)} ${plainStatus}
+        `);
+        App.markers.push(m);
+      });
+
+      document.getElementById("loadText").textContent = `Estações no mapa: ${coords.length}`;
+      el.loadMap.style.display = "flex";
+      el.mapBar.style.width = "100%";
+    }
+
+    function parseSeries(registros, campo){
+      return registros.map(r => {
+        const data = r?.DT_MEDICAO;
+        const hora = horaFromHR(r?.HR_MEDICAO);
+        const x = data ? new Date(`${data}T${hora}:00:00Z`) : null;
+        const raw = r?.[campo];
+        const y = raw == null || raw === "" || raw === "-" ? null : Number(String(raw).replace("*","").replace(",", "."));
+        return { x, y };
+      }).filter(p => p.x);
+    }
+
+    function renderCharts(codigo){
+      const row = App.data.find(r => r["CÓDIGO"] === codigo);
+      const registros = row?.__raw10 || [];
+      const grid = el.chartsGrid;
+      grid.innerHTML = "";
+
+      const vars = {
+        TEM_INS:"Temperatura instantânea",
+        TEM_MAX:"Temperatura máxima",
+        TEM_MIN:"Temperatura mínima",
+        UMD_INS:"Umidade instantânea",
+        UMD_MAX:"Umidade máxima",
+        UMD_MIN:"Umidade mínima",
+        PRE_INS:"Pressão instantânea",
+        VEN_DIR:"Direção do vento",
+        VEN_VEL:"Velocidade do vento",
+        VEN_RAJ:"Rajada do vento",
+        RAD_GLO:"Radiação global",
+        CHUVA:"Chuva",
+        TEN_BAT:"Tensão bateria"
+      };
+
+      for (const [campo, titulo] of Object.entries(vars)){
+        if (!registros.some(r => r?.[campo] != null)) continue;
+        const serie = parseSeries(registros, campo).filter(p => p.y != null);
+        if (!serie.length) continue;
+
+        const card = document.createElement("div");
+        card.className = "chart-card";
+        card.innerHTML = `<canvas id="c_${campo}"></canvas>`;
+        grid.appendChild(card);
+
+        if (App.charts[campo]) App.charts[campo].destroy();
+
+        const isBar = ["RAD_GLO","CHUVA","TEN_BAT"].includes(campo);
+        const isDir = campo === "VEN_DIR";
+
+        App.charts[campo] = new Chart(document.getElementById(`c_${campo}`), {
+          type: isBar ? "bar" : "line",
+          data: {
+            labels: serie.map(p => p.x.toISOString().slice(0,16).replace("T"," ")),
+            datasets: [{              label: titulo,
+              data: serie.map(p => p.y),
+              borderColor: "#102033",
+              backgroundColor: isBar ? "rgba(16,32,51,.75)" : "rgba(16,32,51,.08)",
+              pointRadius: isDir ? 3 : 2,
+              borderWidth: isBar ? 0 : 2,
+              tension: 0.2
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false }, title: { display: true, text: `${codigo} - ${titulo}` } },
+            scales: {
+              x: { ticks: { maxRotation: 45, minRotation: 45 } },
+              y: { beginAtZero: isBar || campo === "VEN_DIR", max: isDir ? 360 : undefined }
+            }
+          }
+        });
+      }
+    }
+
+    function renderGeoJSON(data){
+      return {
+        type: "FeatureCollection",
+        features: data
+          .map(r => ({
+            type: "Feature",
+            geometry: { type: "Point", coordinates: [Number(String(r.LONGITUDE).replace(",", ".")), Number(String(r.LATITUDE).replace(",", "."))] },
+            properties: { ...r, __raw10: undefined, __raw5: undefined }
+          }))
+          .filter(f => Number.isFinite(f.geometry.coordinates) && Number.isFinite(f.geometry.coordinates[1]))
+      };
+    }
+
+    function renderKML(data){
+      const escape = s => String(s ?? "").replace(/[<&>"]/g, m => ({ "<":"&lt;","&": "&amp;", ">":"&gt;", '"':"&quot;" }[m]));
+      const placemarks = data.map(r => `
+        <Placemark>
+          <name>${escape(r["CÓDIGO"])}</name>
+          <description><![CDATA[            <strong>${escape(r["NOME ESTAÇÃO"] || "")}</strong><br/>
+            UF: ${escape(r["UF"] || "")}<br/>
+            Região: ${escape(r["REGIÃO"] || "")}<br/>
+            Status: ${escape(stripStatus(r["STATUS OPERACIONAL"]))}<br/>
+            Última Transmissão: ${escape(r["ÚLTIMA TRANSMISSÃO"] || "-")}
+          ]]></description>
+          <Point>
+            <coordinates>${String(r["LONGITUDE"]).replace(",", ".")},${String(r["LATITUDE"]).replace(",", ".")},0</coordinates>
+          </Point>
+        </Placemark>
+      `).join("");
+
+      return `<?xml version="1.0" encoding="UTF-8"?>
+      <kml xmlns="http://www.opengis.net/kml/2.2">
+        <Document>
+          <name>Monitoramento INMET</name>
+          ${placemarks}
+        </Document>
+      </kml>`;
+    }
+
+    function downloadFile(content, name, type){
+      const blob = new Blob([content], { type });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
+    function exportCSV(){
+      const cols = Object.keys(App.filtered || App.data || {}).filter(c => !c.startsWith("__"));
+      const escape = s => `"${String(s ?? "").replaceAll('"','""')}"`;
+      const lines = [cols.join(","), ...App.filtered.map(r => cols.map(c => escape(r[c])).join(","))];
+      downloadFile(lines.join("\n"), `MONITORAMENTO_${Date.now()}.csv`, "text/csv;charset=utf-8");
+    }
+
+    function exportExcel(){
+      const clean = App.filtered.map(r => {
+        const o = { ...r };
+        delete o.__raw10;
+        delete o.__raw5;
+        return o;
+      });
+      const ws = XLSX.utils.json_to_sheet(clean);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "MONITORAMENTO");
+      XLSX.writeFile(wb, `MONITORAMENTO_${Date.now()}.xlsx`);
+    }
+
+    function exportGeoJSON(){
+      downloadFile(JSON.stringify(renderGeoJSON(App.filtered), null, 2), `MONITORAMENTO_${Date.now()}.geojson`, "application/geo+json");
+    }
+
+    function exportKML(){
+      downloadFile(renderKML(App.filtered), `MONITORAMENTO_${Date.now()}.kml`, "application/vnd.google-earth.kml+xml");
+    }
+
+    function loadCache(){
+      try{
+        const meta = JSON.parse(localStorage.getItem(App.cacheMetaKey) || "null");
+        const raw = localStorage.getItem(App.cacheKey);
+        if (!raw || !meta) return null;
+        return { meta, data: JSON.parse(raw) };
+      }catch{
+        return null;
+      }
+    }
+
+    function saveCache(data){
+      try{
+        localStorage.setItem(App.cacheKey, JSON.stringify(data));
+        localStorage.setItem(App.cacheMetaKey, JSON.stringify({ savedAt: new Date().toISOString(), count: data.length }));
+      }catch{}
+    }
+
+    async function saveIndexedDB(data){
+      return new Promise((resolve) => {
+        try{
+          const req = indexedDB.open("inmet_v2_db", 1);
+          req.onupgradeneeded = () => req.result.createObjectStore("cache");
+          req.onsuccess = () => {
+            const db = req.result;
+            const tx = db.transaction("cache", "readwrite");
+            tx.objectStore("cache").put(data, "stations");
+            tx.oncomplete = () => { db.close(); resolve(); };
+            tx.onerror = () => { db.close(); resolve(); };
+          };
+          req.onerror = () => resolve();
+        }catch{ resolve(); }
+      });
+    }
+
+    async function loadIndexedDB(){
+      return new Promise((resolve) => {
+        try{
+          const req = indexedDB.open("inmet_v2_db", 1);
+          req.onupgradeneeded = () => req.result.createObjectStore("cache");
+          req.onsuccess = () => {
+            const db = req.result;
+            const tx = db.transaction("cache", "readonly");
+            const getReq = tx.objectStore("cache").get("stations");
+            getReq.onsuccess = () => { db.close(); resolve(getReq.result || null); };
+            getReq.onerror = () => { db.close(); resolve(null); };
+          };
+          req.onerror = () => resolve(null);
+        }catch{ resolve(null); }
+      });
+    }
+
+    function rebuildFromCache(data){
+      App.data = data || [];
+      App.filtered = [...App.data];
+      renderAll();
+      updateMeta("localStorage/IndexedDB");
+    }
+
+    function renderAll(){
+      renderKPIs(App.filtered);
+      renderTable(App.filtered);
+      updateMap(App.filtered);
+      updateSelect();
+    }
+
+    function updateSelect(){
+      const current = el.stationSelect.value;
+      el.stationSelect.innerHTML = App.filtered.map(r => `<option value="${r["CÓDIGO"]}">${r["CÓDIGO"]} - ${r["NOME ESTAÇÃO"] || ""}</option>`).join("");
+      if (current && App.filtered.some(r => r["CÓDIGO"] === current)) el.stationSelect.value = current;
+      else if (App.filtered) el.stationSelect.value = App.filtered["CÓDIGO"];
+      renderCharts(el.stationSelect.value);
+    }
+
+    async function carregarTudo(force = false){
+      el.loadMap.style.display = "flex";
+      el.mapBar.style.width = "10%";
+      el.loadText.textContent = "Preparando dados...";
+      document.getElementById("errorInfo").textContent = "";
+
+      try{
+        if (!force){
+          const cached = loadCache();
+          if (cached?.data?.length){
+            App.data = cached.data;
+            App.filtered = [...App.data];
+            renderAll();
+            updateMeta(`localStorage (${cached.meta?.count || App.data.length})`);
+          }
+        }
+
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 60000);
+
+        const estacoes = await getEstacoes(controller.signal);
+        el.loadText.textContent = `Processando ${estacoes.length} estações...`;
+
+        const resultados = [];
+        const chunkSize = 20;
+        for (let i = 0; i < estacoes.length; i += chunkSize){
+          const chunk = estacoes.slice(i, i + chunkSize);
+          const parcial = await Promise.all(chunk.map(r => processarEstacao(r, controller.signal)));
+          resultados.push(...parcial.filter(Boolean));
+          const pct = Math.round(((i + chunk.length) / estacoes.length) * 100);
+          el.mapBar.style.width = `${pct}%`;
+          el.loadText.textContent = `Processadas ${Math.min(i + chunk.length, estacoes.length)}/${estacoes.length}`;
+        }
+
+        clearTimeout(timeout);
+
+        resultados.sort((a,b) => String(a["CÓDIGO"]).localeCompare(String(b["CÓDIGO"])));
+        resultados.forEach(row => {
+          row["STATUS OPERACIONAL"] = `${symbolFromStatus(stripStatus(row["STATUS OPERACIONAL"]))} ${stripStatus(row["STATUS OPERACIONAL"])}`;
+          row["SITUAÇÃO ESTAÇÃO"] = row["SITUAÇÃO ESTAÇÃO"];
+          for (const s of Object.values(SENSORES)) row[s] = row[s];
+        });
+
+        App.data = resultados;
+        App.filtered = [...App.data];
+        saveCache(App.data);
+        saveIndexedDB(App.data);
+
+        App.lastUpdate = new Date().toLocaleString("pt-BR", { timeZone: "UTC" }) + " UTC";
+        updateMeta(`localStorage + IndexedDB`);
+        createLegend();
+        buildFilters(App.data);
+        renderAll();
+
+        document.getElementById("errorInfo").textContent = "";
+        el.loadText.textContent = `Atualização concluída`;
+      }catch(err){
+        console.error(err);
+        document.getElementById("errorInfo").textContent = `Erro: ${err.message || "falha desconhecida"}`;
+        const cached = loadCache();
+        if (cached?.data?.length){
+          rebuildFromCache(cached.data);
+        }
+      }finally{
+        setTimeout(() => { el.loadMap.style.display = "none"; }, 600);
+      }
+    }
+
+    function bindEvents(){
+      document.getElementById("themeBtn").addEventListener("click", toggleTheme);
+      document.getElementById("refreshBtn").addEventListener("click", () => carregarTudo(true));
+      document.getElementById("csvBtn").addEventListener("click", exportCSV);
+      document.getElementById("excelBtn").addEventListener("click", exportExcel);
+      document.getElementById("geojsonBtn").addEventListener("click", exportGeoJSON);
+      document.getElementById("kmlBtn").addEventListener("click", exportKML);
+
+      el.searchInput.addEventListener("input", debounce(applyFilters, 250));
+      el.ufFilter.addEventListener("change", applyFilters);
+      el.regionFilter.addEventListener("change", applyFilters);
+      el.statusFilter.addEventListener("change", applyFilters);
+      el.pageSize.addEventListener("change", () => { App.page = 1; applyFilters(); });
+      el.stationSelect.addEventListener("change", () => renderCharts(el.stationSelect.value));
+
+      document.getElementById("firstPageBtn").addEventListener("click", () => { App.page = 1; renderTable(App.filtered); });
+      document.getElementById("prevPageBtn").addEventListener("click", () => { App.page = Math.max(1, App.page - 1); renderTable(App.filtered); });
+      document.getElementById("nextPageBtn").addEventListener("click", () => { App.page += 1; renderTable(App.filtered); });
+      document.getElementById("lastPageBtn").addEventListener("click", () => {
+        App.page = Math.max(1, Math.ceil(App.filtered.length / App.pageSize));
+        renderTable(App.filtered);
+      });
+    }
+
+    function debounce(fn, delay){
+      let t;
+      return (...args) => {
+        clearTimeout(t);
+        t = setTimeout(() => fn(...args), delay);
+      };
+    }
+
+    function renderTable(data){
+      const cols = Object.keys(data || {}).filter(c => !c.startsWith("__") && !["LATITUDE","LONGITUDE"].includes(c));
+      const { rows, totalPages } = paginate(data);
+
+      el.pageInfo.textContent = `Página ${App.page} de ${totalPages}`;
+      el.tableStats.textContent = `${data.length} registros filtrados`;
+      const regionGroups = [...new Set(data.map(r => r["REGIÃO"]))].filter(Boolean).length;
+      el.groupInfo.textContent = `Agrupamento por região: ${regionGroups} grupos`;
+
+      el.table.innerHTML = `
+        <thead><tr>${cols.map(c => `<th>${c}</th>`).join("")}</tr></thead>
+        <tbody>
+          ${rows.map(r => `<tr>${cols.map(c => {
+            const v = r[c] ?? "";
+            if (c === "STATUS OPERACIONAL" || c === "SITUAÇÃO ESTAÇÃO" || Object.values(SENSORES).includes(c)){
+              return `<td><span class="${statusClass(v)}">${safeText(v)}</span></td>`;
+            }
+            return `<td>${safeText(v)}</td>`;
+          }).join("")}</tr>`).join("")}
+        </tbody>
+      `;
+    }
+
+    function paginate(data){
+      const size = Number(el.pageSize.value || 25);
+      App.pageSize = size;
+      const totalPages = Math.max(1, Math.ceil(data.length / size));
+      App.page = Math.min(App.page, totalPages);
+      const start = (App.page - 1) * size;
+      return { rows: data.slice(start, start + size), totalPages };
+    }
+
+    function renderChartsWrapper(codigo){
+      renderCharts(codigo);
+    }
+
+    async function init(){
+      setTheme(App.theme);
+      bindEvents();
+      createLegend();
+      updateMeta("--");
+
+      const cached = await loadIndexedDB();
+      const local = loadCache();
+
+      if (local?.data?.length){
+        App.data = local.data;
+        App.filtered = [...App.data];
+        renderAll();
+        updateMeta(`localStorage (${local.meta?.count || App.data.length})`);
+      } else if (cached?.length){
+        App.data = cached;
+        App.filtered = [...App.data];
+        renderAll();
+        updateMeta(`IndexedDB (${cached.length})`);
+      }
+
+      await carregarTudo(false);
+    }
+
+    init();
+  </script>
+</body>
+</html>
